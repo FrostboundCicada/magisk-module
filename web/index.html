@@ -164,7 +164,7 @@ function loadLogs(){
     $('logs').scrollTop=$('logs').scrollHeight;
   });
 }
-function applyConfig(){
+function applyConfig(msg){
   var p=[];
   p.push('force_max_speed='+($('t-force').checked?1:0));
   p.push('enable_fake_cycle='+($('t-fake').checked?1:0));
@@ -175,26 +175,38 @@ function applyConfig(){
   x.open('GET',API+'?action=update&'+p.join('&'),true);
   x.onreadystatechange=function(){
     if(x.readyState==4&&x.status==200){
-      $('btn-apply').textContent='已应用';
-      setTimeout(function(){$('btn-apply').textContent='应用更改'},2000);
+      showToast(msg||'配置已应用');
       loadLogs();
     }
   };
   x.send();
+}
+function showToast(msg){
+  var t=document.getElementById('toast');
+  if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4ecca3;color:#0f0f1e;padding:10px 24px;border-radius:20px;font-size:.85rem;font-weight:600;z-index:999;opacity:0;transition:opacity .3s';document.body.appendChild(t)}
+  t.textContent=msg;t.style.opacity='1';
+  clearTimeout(t._timer);
+  t._timer=setTimeout(function(){t.style.opacity='0'},2000);
 }
 function restartService(){
   var x=new XMLHttpRequest();
   x.open('GET',API+'?action=restart',true);
   x.onreadystatechange=function(){
     if(x.readyState==4&&x.status==200){
-      $('btn-restart').textContent='已发送重启信号';
-      setTimeout(function(){$('btn-restart').textContent='重启充电服务'},3000);
+      showToast('重启信号已发送');
     }
   };
   x.send();
 }
-$('btn-apply').onclick=applyConfig;
+$('btn-apply').onclick=function(){applyConfig('参数已应用')};
 $('btn-restart').onclick=restartService;
+// 开关即时生效
+$('t-force').onchange=function(){applyConfig(this.checked?'强制满速已开启':'强制满速已关闭')};
+$('t-fake').onchange=function(){applyConfig(this.checked?'插拔伪装已开启':'插拔伪装已关闭')};
+// 下拉选择即时生效
+$('s-volt').onchange=function(){applyConfig('电压上限已更新')};
+$('s-curr').onchange=function(){applyConfig('电流上限已更新')};
+$('s-input').onchange=function(){applyConfig('输入电流已更新')};
 updateStatus();loadConfig();loadLogs();
 setInterval(updateStatus,3000);
 setInterval(loadLogs,5000);
