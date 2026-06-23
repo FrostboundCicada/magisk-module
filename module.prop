@@ -1,6 +1,6 @@
 id=oneplus_charging_fix
 name=OnePlus Charging Fix
-version=v1.2.0
-versionCode=3
+version=v1.3.0
+versionCode=4
 author=FrostboundCicada
-description=解决一加设备充电问题的 Magisk 模块。安装时可通过音量键选择电池充电电压上限(4.35V/4.40V/4.45V)，检测到官方快充协议时每隔120秒伪装充电器插拔。主要支持 ColorOS 16，向下兼容。
+description=解决一加设备充电问题的 Magisk 模块。安装时显示原始参数并可通过音量键选择电压/电流/输入电流上限，检测到快充协议时周期性伪装插拔。主要支持 ColorOS 16，向下兼容。
