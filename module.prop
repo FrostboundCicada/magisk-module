@@ -1,6 +1,6 @@
 id=oneplus_charging_fix
 name=OnePlus Charging Fix
-version=v1.3.0
-versionCode=4
+version=v1.4.0
+versionCode=5
 author=FrostboundCicada
-description=解决一加设备充电问题的 Magisk 模块。安装时显示原始参数并可通过音量键选择电压/电流/输入电流上限，检测到快充协议时周期性伪装插拔。主要支持 ColorOS 16，向下兼容。
+description=解决一加设备充电问题的 Magisk 模块。支持电压/电流调节、快充插拔伪装、强制满速充电(亮屏不限速/禁用温控降速/持续维持最大电流)。主要支持 ColorOS 16，向下兼容。

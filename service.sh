@@ -1,9 +1,10 @@
 #!/system/bin/sh
-# OnePlus Charging Fix - 充电参数控制 + 插拔伪装服务
+# OnePlus Charging Fix - 充电参数控制 + 插拔伪装 + 强制满速
 # 功能:
 #   1. 备份原始充电参数并显示修改前/后对比
 #   2. 应用电压/电流/输入电流上限
 #   3. 检测快充协议时周期性伪装充电器插拔
+#   4. 强制满速充电: 亮屏不限速 + 禁用温控降速 + 持续维持最大电流
 # 主要支持 ColorOS 16，向下兼容
 
 MODDIR=${0%/*}
@@ -24,6 +25,7 @@ VOLTAGE_LIMIT=0
 CURRENT_LIMIT=0
 INPUT_CURRENT_LIMIT=0
 ENABLE_FAKE_CYCLE=1
+FORCE_MAX_SPEED=0
 if [ -f "$MODDIR/charging_params.conf" ]; then
     . "$MODDIR/charging_params.conf"
 fi
@@ -396,6 +398,137 @@ fake_charger_cycle() {
     fi
 }
 
+# ==================== 强制满速充电 ====================
+# 持续覆盖系统充电策略: 亮屏不限速、禁用温控降速、维持最大电流
+
+# 写入 sysfs 节点，失败静默
+write_node() {
+    if [ -w "$1" ]; then
+        echo "$2" > "$1" 2>/dev/null
+    fi
+}
+
+# 强制启用快充
+force_fastcharge_enable() {
+    # VOOC/SVOOC 快充开关强制开启
+    for path in \
+        /sys/class/power_supply/vooc/enable \
+        /sys/class/power_supply/svooc/enable \
+        /sys/class/oplus_chg/vooc_enable \
+        /sys/class/oplus_chg/svooc_enable \
+        /sys/class/oplus_chg/fastchg_normal_switch \
+        /sys/class/oplus_chg/fastchg_switch; do
+        write_node "$path" 1
+    done
+
+    # 通用快充开关
+    for path in \
+        /sys/class/power_supply/battery/fast_charge \
+        /sys/class/power_supply/usb/fast_charge; do
+        write_node "$path" 1
+    done
+}
+
+# 禁用亮屏限速
+force_disable_screen_throttle() {
+    # 一加/OPPO 亮屏充电限速节点
+    for path in \
+        /sys/class/oplus_chg/screen_on_current_max \
+        /sys/class/oplus_chg/screen_on_charge_current_max \
+        /sys/class/power_supply/battery/screen_on_current_max \
+        /sys/class/power_supply/battery/charge_screen_on_current_max; do
+        # 写入一个很大的值，等效于不限速
+        write_node "$path" 10000000
+    done
+
+    # 禁用亮屏限速开关
+    for path in \
+        /sys/class/oplus_chg/screen_on_limit \
+        /sys/class/oplus_chg/screen_on_limit_enable \
+        /sys/class/power_supply/battery/screen_on_limit; do
+        write_node "$path" 0
+    done
+}
+
+# 禁用温控降速
+force_disable_thermal_throttle() {
+    # 提高温控阈值到最大
+    for path in \
+        /sys/class/power_supply/battery/system_temp_level \
+        /sys/class/oplus_chg/thermal_temp_level \
+        /sys/class/oplus_chg/normal_temp_level; do
+        # 0 通常表示不限制或最高级别
+        write_node "$path" 0
+    done
+
+    # 禁用充电温控
+    for path in \
+        /sys/class/oplus_chg/thermal_switch \
+        /sys/class/oplus_chg/cool_down \
+        /sys/class/power_supply/battery/thermal_charging; do
+        write_node "$path" 0
+    done
+
+    # 提高温控电流限制
+    for path in \
+        /sys/class/oplus_chg/thermal_current_max \
+        /sys/class/power_supply/battery/thermal_current_max; do
+        write_node "$path" 10000000
+    done
+}
+
+# 禁用电量阶段限速 (高电量时系统会降低充电速度)
+force_disable_stage_throttle() {
+    # 禁用充电阶段限制
+    for path in \
+        /sys/class/oplus_chg/fg_stage_charge \
+        /sys/class/oplus_chg/stage_charge_enable \
+        /sys/class/power_supply/battery/stage_charge_enable; do
+        write_node "$path" 0
+    done
+
+    # 提高涓流充电阈值
+    for path in \
+        /sys/class/oplus_chg/tick_current_max \
+        /sys/class/oplus_chg/termination_current \
+        /sys/class/power_supply/battery/termination_current; do
+        write_node "$path" 10000000
+    done
+}
+
+# 强制维持最大充电电流
+force_max_current() {
+    # 持续写入最大电流值
+    for path in \
+        /sys/class/power_supply/battery/constant_charge_current_max \
+        /sys/class/power_supply/main/constant_charge_current_max \
+        /sys/class/oplus_chg/constant_charge_current_max; do
+        if [ -w "$path" ]; then
+            # 写入 10A (10000000uA)，硬件会自动限制到实际最大值
+            echo 10000000 > "$path" 2>/dev/null
+        fi
+    done
+
+    # 输入电流限制拉满
+    for path in \
+        /sys/class/power_supply/usb/input_current_limit \
+        /sys/class/power_supply/main/input_current_limit \
+        /sys/class/oplus_chg/input_current_max; do
+        if [ -w "$path" ]; then
+            echo 10000000 > "$path" 2>/dev/null
+        fi
+    done
+}
+
+# 强制满速充电主逻辑 (每次循环调用)
+force_max_speed_once() {
+    force_fastcharge_enable
+    force_disable_screen_throttle
+    force_disable_thermal_throttle
+    force_disable_stage_throttle
+    force_max_current
+}
+
 # ==================== 主流程 ====================
 log "==============================="
 log "OnePlus Charging Fix 服务启动"
@@ -408,6 +541,7 @@ log "  电压上限: $([ "$VOLTAGE_LIMIT" = "0" ] && echo "不修改" || echo "$
 log "  电流上限: $([ "$CURRENT_LIMIT" = "0" ] && echo "不修改" || echo "${CURRENT_LIMIT}mA")"
 log "  输入电流: $([ "$INPUT_CURRENT_LIMIT" = "0" ] && echo "不修改" || echo "${INPUT_CURRENT_LIMIT}mA")"
 log "  插拔伪装: $([ "$ENABLE_FAKE_CYCLE" = "1" ] && echo "启用" || echo "禁用")"
+log "  强制满速: $([ "$FORCE_MAX_SPEED" = "1" ] && echo "启用" || echo "禁用")"
 log "  循环间隔: ${INTERVAL}s"
 log "==============================="
 
@@ -421,23 +555,48 @@ apply_current_limit
 apply_input_current_limit
 log "--- 参数应用完成 ---"
 
-# 3. 如果禁用了插拔伪装，应用完参数后退出
-if [ "$ENABLE_FAKE_CYCLE" != "1" ]; then
-    log "插拔伪装已禁用，服务退出"
+# 3. 如果启用强制满速，先执行一次
+if [ "$FORCE_MAX_SPEED" = "1" ]; then
+    log "--- 强制满速充电已启用 ---"
+    log "将持续覆盖: 亮屏限速 / 温控降速 / 电量阶段限速"
+    force_max_speed_once
+    log "强制满速初始应用完成"
+fi
+
+# 4. 如果禁用了插拔伪装和强制满速，应用完参数后退出
+if [ "$ENABLE_FAKE_CYCLE" != "1" ] && [ "$FORCE_MAX_SPEED" != "1" ]; then
+    log "插拔伪装和强制满速均未启用，服务退出"
     exit 0
 fi
 
-# 4. 主循环: 插拔伪装
+# 5. 主循环
+FORCE_INTERVAL=10
+log "进入主循环 (强制满速刷新间隔: ${FORCE_INTERVAL}s, 插拔伪装间隔: ${INTERVAL}s)"
+
+cycle_count=0
 while true; do
-    if is_charger_connected; then
-        charge_type=$(get_fast_charge_type)
-        if [ -n "$charge_type" ]; then
-            fake_charger_cycle "$charge_type"
-        else
-            log "充电器已连接，非快充协议，跳过"
-        fi
-    else
-        log "充电器未连接，跳过"
+    # 强制满速: 每 10 秒刷新一次，持续覆盖系统策略
+    if [ "$FORCE_MAX_SPEED" = "1" ]; then
+        force_max_speed_once
     fi
-    sleep "$INTERVAL"
+
+    # 插拔伪装: 每 INTERVAL 秒执行一次
+    if [ "$ENABLE_FAKE_CYCLE" = "1" ]; then
+        cycle_count=$((cycle_count + FORCE_INTERVAL))
+        if [ "$cycle_count" -ge "$INTERVAL" ]; then
+            cycle_count=0
+            if is_charger_connected; then
+                charge_type=$(get_fast_charge_type)
+                if [ -n "$charge_type" ]; then
+                    fake_charger_cycle "$charge_type"
+                else
+                    log "充电器已连接，非快充协议，跳过插拔"
+                fi
+            else
+                log "充电器未连接，跳过插拔"
+            fi
+        fi
+    fi
+
+    sleep "$FORCE_INTERVAL"
 done

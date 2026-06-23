@@ -24,8 +24,8 @@ if [ "$COLOROS_VERSION" = "unknown" ]; then
 fi
 
 ui_print "- ================================"
-ui_print "- OnePlus Charging Fix v1.3.0"
-ui_print "- 快充检测 + 插拔伪装 + 电压/电流调节"
+ui_print "- OnePlus Charging Fix v1.4.0"
+ui_print "- 快充检测 + 插拔伪装 + 电压/电流调节 + 强制满速"
 ui_print "- ================================"
 
 if [ "$ONEPLUS" = "true" ]; then
@@ -249,6 +249,27 @@ else
     ui_print "- 已启用插拔伪装 (间隔120s)"
 fi
 
+ui_print "- "
+
+# ==================== 音量键选择是否启用强制满速充电 ====================
+ui_print "- 是否启用强制满速充电?"
+ui_print "-   (亮屏不限速 + 禁用温控降速 + 持续维持最大电流)"
+ui_print "-   [音量+] 禁用(默认)"
+ui_print "-   [音量-] 启用"
+ui_print "- "
+choice=$(chooseport 60)
+
+FORCE_MAX_SPEED=0
+if [ "$choice" = "2" ]; then
+    FORCE_MAX_SPEED=1
+    ui_print "- 已启用强制满速充电"
+    ui_print "! 警告: 此功能会持续覆盖系统充电策略"
+    ui_print "! 亮屏/温控/电量阶段均不限速"
+    ui_print "! 可能导致严重发热，请注意散热"
+else
+    ui_print "- 已禁用强制满速充电"
+fi
+
 # ==================== 保存配置 ====================
 cat > "$MODPATH/charging_params.conf" << PARAMS_EOF
 # OnePlus Charging Fix 参数配置
@@ -265,6 +286,9 @@ INPUT_CURRENT_LIMIT=$INPUT_CURRENT_LIMIT
 
 # 是否启用插拔伪装 (1=启用，0=禁用)
 ENABLE_FAKE_CYCLE=$ENABLE_FAKE_CYCLE
+
+# 是否启用强制满速充电 (1=启用，0=禁用)
+FORCE_MAX_SPEED=$FORCE_MAX_SPEED
 PARAMS_EOF
 
 ui_print "- "
@@ -274,6 +298,7 @@ ui_print "-   电压上限: $VOLTAGE_LABEL"
 ui_print "-   电流上限: $CURRENT_LABEL"
 ui_print "-   输入电流: $INPUT_CURRENT_LABEL"
 ui_print "-   插拔伪装: $([ "$ENABLE_FAKE_CYCLE" = "1" ] && echo "启用" || echo "禁用")"
+ui_print "-   强制满速: $([ "$FORCE_MAX_SPEED" = "1" ] && echo "启用" || echo "禁用")"
 ui_print "- ================================"
 ui_print "- "
 ui_print "- 安装中..."
