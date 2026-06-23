@@ -1,6 +1,7 @@
 #!/system/bin/sh
-# OnePlus Charging Fix - 充电伪装插拔服务
+# OnePlus Charging Fix - 充电伪装插拔服务 + 电压上限控制
 # 检测到官方快充协议时，每隔指定间隔伪装一次充电器插拔
+# 支持通过安装时选择的电压上限调整电池充电电压
 # 主要支持 ColorOS 16，向下兼容
 
 MODDIR=${0%/*}
@@ -13,6 +14,13 @@ MAX_LOG_LINES=500
 
 if [ -f "$MODDIR/config" ]; then
     . "$MODDIR/config"
+fi
+
+# 读取安装时选择的电压配置
+VOLTAGE_LIMIT=0
+ENABLE_FAKE_CYCLE=1
+if [ -f "$MODDIR/voltage.conf" ]; then
+    . "$MODDIR/voltage.conf"
 fi
 
 # ==================== 等待系统启动 ====================
@@ -30,6 +38,65 @@ log() {
     if [ -n "$lines" ] && [ "$lines" -gt "$MAX_LOG_LINES" ]; then
         tail -n $((MAX_LOG_LINES / 2)) "$LOGFILE" > "$LOGFILE.tmp" 2>/dev/null
         mv "$LOGFILE.tmp" "$LOGFILE" 2>/dev/null
+    fi
+}
+
+# ==================== 应用电压上限 ====================
+apply_voltage_limit() {
+    if [ "$VOLTAGE_LIMIT" = "0" ] || [ -z "$VOLTAGE_LIMIT" ]; then
+        log "电压上限: 默认(不修改)"
+        return
+    fi
+
+    # 将电压值转换为微伏 (mV -> uV)
+    local voltage_uv="${VOLTAGE_LIMIT}000"
+    local applied=false
+
+    log "开始应用电压上限: ${VOLTAGE_LIMIT}mV (${voltage_uv}uV)"
+
+    # 尝试多个 sysfs 路径设置充电电压上限
+    for path in \
+        /sys/class/power_supply/battery/constant_charge_voltage_max \
+        /sys/class/power_supply/battery/voltage_max \
+        /sys/class/power_supply/main/voltage_max \
+        /sys/class/power_supply/bms/voltage_max \
+        /sys/class/power_supply/battery/fg_voltage_max; do
+        if [ -w "$path" ]; then
+            echo "$voltage_uv" > "$path" 2>/dev/null
+            local result
+            result=$(cat "$path" 2>/dev/null)
+            if [ -n "$result" ]; then
+                log "通过 $path 设置电压上限: ${result}uV"
+                applied=true
+                break
+            fi
+        fi
+    done
+
+    # 备用: 尝试以毫伏为单位写入
+    if [ "$applied" = "false" ]; then
+        for path in \
+            /sys/class/power_supply/battery/constant_charge_voltage_max \
+            /sys/class/power_supply/battery/voltage_max; do
+            if [ -w "$path" ]; then
+                echo "$VOLTAGE_LIMIT" > "$path" 2>/dev/null
+                local result
+                result=$(cat "$path" 2>/dev/null)
+                if [ -n "$result" ]; then
+                    log "通过 $path 设置电压上限(mV): ${result}"
+                    applied=true
+                    break
+                fi
+            fi
+        done
+    fi
+
+    if [ "$applied" = "false" ]; then
+        log "警告: 未找到可用的电压控制节点"
+        log "可用的 battery sysfs 节点:"
+        ls /sys/class/power_supply/battery/ >> "$LOGFILE" 2>/dev/null
+    else
+        log "电压上限应用完成"
     fi
 }
 
@@ -149,15 +216,27 @@ fake_charger_cycle() {
     fi
 }
 
-# ==================== 主循环 ====================
+# ==================== 主流程 ====================
 log "==============================="
 log "OnePlus Charging Fix 服务启动"
 log "设备: $(getprop ro.product.device)"
 log "型号: $(getprop ro.product.model)"
 log "ROM版本: $(getprop ro.build.version.oplusrom)"
 log "循环间隔: ${INTERVAL}s, 关闭时长: ${TOGGLE_OFF_TIME}s"
+log "插拔伪装: $([ "$ENABLE_FAKE_CYCLE" = "1" ] && echo "启用" || echo "禁用")"
+log "电压上限: $([ "$VOLTAGE_LIMIT" = "0" ] && echo "默认" || echo "${VOLTAGE_LIMIT}mV")"
 log "==============================="
 
+# 应用电压上限
+apply_voltage_limit
+
+# 如果禁用了插拔伪装，只应用电压后退出
+if [ "$ENABLE_FAKE_CYCLE" != "1" ]; then
+    log "插拔伪装已禁用，服务退出"
+    exit 0
+fi
+
+# 主循环
 while true; do
     if is_charger_connected; then
         charge_type=$(get_fast_charge_type)
