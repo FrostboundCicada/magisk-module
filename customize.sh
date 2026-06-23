@@ -25,8 +25,9 @@ if [ "$COLOROS_VERSION" = "unknown" ]; then
 fi
 
 ui_print "- ================================"
-ui_print "- OnePlus Charging Fix"
-ui_print "- 版本: v1.0.0"
+ui_print "- OnePlus Charging Fix v1.1.0"
+ui_print "- 功能: 快充协议检测 + 充电器插拔伪装"
+ui_print "- 默认间隔: 120s"
 ui_print "- ================================"
 
 if [ "$ONEPLUS" = "true" ]; then
@@ -52,6 +53,9 @@ if [ -f "$MODPATH/service.sh" ]; then
 fi
 if [ -f "$MODPATH/post-fs-data.sh" ]; then
     set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
+fi
+if [ -f "$MODPATH/uninstall.sh" ]; then
+    set_perm "$MODPATH/uninstall.sh" 0 0 0755
 fi
 
 ui_print "- 安装完成!"
