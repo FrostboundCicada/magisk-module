@@ -270,6 +270,26 @@ else
     ui_print "- 已禁用强制满速充电"
 fi
 
+ui_print "- "
+
+# ==================== 音量键选择是否启用 Web 管理 ====================
+ui_print "- 是否启用 Web 管理界面?"
+ui_print "-   (可通过浏览器实时查看和修改充电参数)"
+ui_print "-   [音量+] 启用(默认)"
+ui_print "-   [音量-] 禁用"
+ui_print "- "
+choice=$(chooseport 60)
+
+ENABLE_WEB_UI=1
+if [ "$choice" = "2" ]; then
+    ENABLE_WEB_UI=0
+    ui_print "- 已禁用 Web 管理"
+else
+    ui_print "- 已启用 Web 管理 (端口: 8765)"
+    ui_print "- 访问地址: http://localhost:8765"
+    ui_print "- 或局域网: http://<设备IP>:8765"
+fi
+
 # ==================== 保存配置 ====================
 cat > "$MODPATH/charging_params.conf" << PARAMS_EOF
 # OnePlus Charging Fix 参数配置
@@ -289,6 +309,9 @@ ENABLE_FAKE_CYCLE=$ENABLE_FAKE_CYCLE
 
 # 是否启用强制满速充电 (1=启用，0=禁用)
 FORCE_MAX_SPEED=$FORCE_MAX_SPEED
+
+# 是否启用 Web 管理界面 (1=启用，0=禁用)
+ENABLE_WEB_UI=$ENABLE_WEB_UI
 PARAMS_EOF
 
 ui_print "- "
@@ -299,6 +322,7 @@ ui_print "-   电流上限: $CURRENT_LABEL"
 ui_print "-   输入电流: $INPUT_CURRENT_LABEL"
 ui_print "-   插拔伪装: $([ "$ENABLE_FAKE_CYCLE" = "1" ] && echo "启用" || echo "禁用")"
 ui_print "-   强制满速: $([ "$FORCE_MAX_SPEED" = "1" ] && echo "启用" || echo "禁用")"
+ui_print "-   Web管理: $([ "$ENABLE_WEB_UI" = "1" ] && echo "启用(:8765)" || echo "禁用")"
 ui_print "- ================================"
 ui_print "- "
 ui_print "- 安装中..."
@@ -316,6 +340,9 @@ if [ -f "$MODPATH/post-fs-data.sh" ]; then
 fi
 if [ -f "$MODPATH/uninstall.sh" ]; then
     set_perm "$MODPATH/uninstall.sh" 0 0 0755
+fi
+if [ -f "$MODPATH/web/cgi-bin/api.sh" ]; then
+    set_perm "$MODPATH/web/cgi-bin/api.sh" 0 0 0755
 fi
 
 ui_print "- 安装完成!"

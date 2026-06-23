@@ -26,8 +26,13 @@ CURRENT_LIMIT=0
 INPUT_CURRENT_LIMIT=0
 ENABLE_FAKE_CYCLE=1
 FORCE_MAX_SPEED=0
+ENABLE_WEB_UI=1
+WEB_PORT=8765
 if [ -f "$MODDIR/charging_params.conf" ]; then
     . "$MODDIR/charging_params.conf"
+fi
+if [ -f "$MODDIR/config" ]; then
+    . "$MODDIR/config"
 fi
 
 # ==================== 等待系统启动 ====================
@@ -542,6 +547,7 @@ log "  电流上限: $([ "$CURRENT_LIMIT" = "0" ] && echo "不修改" || echo "$
 log "  输入电流: $([ "$INPUT_CURRENT_LIMIT" = "0" ] && echo "不修改" || echo "${INPUT_CURRENT_LIMIT}mA")"
 log "  插拔伪装: $([ "$ENABLE_FAKE_CYCLE" = "1" ] && echo "启用" || echo "禁用")"
 log "  强制满速: $([ "$FORCE_MAX_SPEED" = "1" ] && echo "启用" || echo "禁用")"
+log "  Web管理: $([ "$ENABLE_WEB_UI" = "1" ] && echo "启用 (端口:$WEB_PORT)" || echo "禁用")"
 log "  循环间隔: ${INTERVAL}s"
 log "==============================="
 
@@ -563,19 +569,76 @@ if [ "$FORCE_MAX_SPEED" = "1" ]; then
     log "强制满速初始应用完成"
 fi
 
-# 4. 如果禁用了插拔伪装和强制满速，应用完参数后退出
-if [ "$ENABLE_FAKE_CYCLE" != "1" ] && [ "$FORCE_MAX_SPEED" != "1" ]; then
-    log "插拔伪装和强制满速均未启用，服务退出"
-    exit 0
+# 4. 启动 Web 管理界面
+if [ "$ENABLE_WEB_UI" = "1" ]; then
+    # 确保 CGI 脚本有执行权限
+    chmod 0755 "$MODDIR/web/cgi-bin/api.sh" 2>/dev/null
+
+    # 先杀掉可能存在的旧 httpd 进程
+    pkill -f "httpd.*$WEB_PORT" 2>/dev/null
+    sleep 1
+
+    # 尝试用 busybox httpd 启动
+    if busybox httpd -p "$WEB_PORT" -h "$MODDIR/web" 2>/dev/null; then
+        log "Web 管理界面已启动: http://localhost:$WEB_PORT"
+        # 获取设备 IP
+        DEVICE_IP=$(ip addr show wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+        if [ -n "$DEVICE_IP" ]; then
+            log "局域网访问: http://$DEVICE_IP:$WEB_PORT"
+        fi
+    else
+        log "警告: busybox httpd 启动失败，Web 管理界面不可用"
+    fi
 fi
 
 # 5. 主循环
 FORCE_INTERVAL=10
-log "进入主循环 (强制满速刷新间隔: ${FORCE_INTERVAL}s, 插拔伪装间隔: ${INTERVAL}s)"
+log "进入主循环 (强制满速刷新: ${FORCE_INTERVAL}s, 插拔伪装: ${INTERVAL}s)"
 
 cycle_count=0
 while true; do
-    # 强制满速: 每 10 秒刷新一次，持续覆盖系统策略
+    # 检查配置热重载标志
+    if [ -f "$MODDIR/reload" ]; then
+        rm -f "$MODDIR/reload"
+        log "--- 检测到配置更新 (Web UI)，重新加载 ---"
+        # 重新读取配置
+        . "$MODDIR/charging_params.conf"
+        log "新配置: 电压=${VOLTAGE_LIMIT}mV 电流=${CURRENT_LIMIT}mA 输入=${INPUT_CURRENT_LIMIT}mA"
+        log "  强制满速=$FORCE_MAX_SPEED 插拔伪装=$ENABLE_FAKE_CYCLE"
+        # 重新应用参数
+        apply_voltage_limit
+        apply_current_limit
+        apply_input_current_limit
+        if [ "$FORCE_MAX_SPEED" = "1" ]; then
+            force_max_speed_once
+        fi
+        log "--- 配置热重载完成 ---"
+    fi
+
+    # 检查重启标志
+    if [ -f "$MODDIR/restart" ]; then
+        rm -f "$MODDIR/restart"
+        log "--- 收到重启信号，重启服务 ---"
+        # 重启 httpd
+        if [ "$ENABLE_WEB_UI" = "1" ]; then
+            pkill -f "httpd.*$WEB_PORT" 2>/dev/null
+            sleep 1
+            busybox httpd -p "$WEB_PORT" -h "$MODDIR/web" 2>/dev/null
+            log "Web 管理界面已重启"
+        fi
+        # 重新应用所有配置
+        . "$MODDIR/charging_params.conf"
+        backup_original_params
+        apply_voltage_limit
+        apply_current_limit
+        apply_input_current_limit
+        if [ "$FORCE_MAX_SPEED" = "1" ]; then
+            force_max_speed_once
+        fi
+        log "--- 服务重启完成 ---"
+    fi
+
+    # 强制满速: 每 10 秒刷新一次
     if [ "$FORCE_MAX_SPEED" = "1" ]; then
         force_max_speed_once
     fi

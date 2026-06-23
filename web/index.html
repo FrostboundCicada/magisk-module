@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OnePlus Charging Fix</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f1e;color:#e0e0e0;font-family:-apple-system,sans-serif;padding:16px;max-width:720px;margin:0 auto}
+h1{font-size:1.3rem;text-align:center;margin-bottom:4px}
+.sub{text-align:center;color:#666;font-size:.8rem;margin-bottom:16px}
+.card{background:#1a1a2e;border-radius:12px;padding:16px;margin-bottom:12px}
+.card h2{font-size:.95rem;margin-bottom:12px;color:#8b8ba7;display:flex;align-items:center;gap:6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.item{display:flex;flex-direction:column;gap:4px}
+.item label{font-size:.75rem;color:#666}
+.item .val{font-size:1.1rem;font-weight:600}
+.val.green{color:#4ecca3}
+.val.red{color:#e94560}
+.val.yellow{color:#f0a500}
+.val.blue{color:#4fc3f7}
+.toggle{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #252540}
+.toggle:last-child{border-bottom:none}
+.toggle .label{font-size:.9rem}
+.switch{position:relative;width:48px;height:26px;cursor:pointer}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#333;border-radius:13px;transition:.3s}
+.slider:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:#999;border-radius:50%;transition:.3s}
+input:checked+.slider{background:#4ecca3}
+input:checked+.slider:before{transform:translateX(22px);background:#fff}
+select{width:100%;padding:8px;background:#252540;color:#e0e0e0;border:1px solid #333;border-radius:8px;font-size:.85rem;margin-top:4px}
+.btn{display:block;width:100%;padding:12px;background:#4ecca3;color:#0f0f1e;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:12px}
+.btn:active{opacity:.8}
+.btn.danger{background:#e94560;color:#fff}
+#logs{background:#0a0a14;border:1px solid #1a1a2e;border-radius:8px;padding:10px;font-family:monospace;font-size:.7rem;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.log-line{margin-bottom:2px}
+.log-warn{color:#f0a500}
+.log-err{color:#e94560}
+.log-ok{color:#4ecca3}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.dot-on{background:#4ecca3}
+.dot-off{background:#666}
+.battery-bar{width:100%;height:8px;background:#252540;border-radius:4px;margin-top:6px;overflow:hidden}
+.battery-fill{height:100%;border-radius:4px;transition:width .5s,background .5s}
+.conn{display:flex;align-items:center;gap:6px;font-size:.8rem;color:#666;margin-bottom:12px;justify-content:center}
+</style>
+</head>
+<body>
+<h1>OnePlus Charging Fix</h1>
+<div class="sub" id="version">v1.5.0</div>
+<div class="conn"><span class="status-dot" id="conn-dot"></span><span id="conn-text">连接中...</span></div>
+
+<div class="card">
+<h2>电池状态</h2>
+<div class="grid">
+<div class="item"><label>电量</label><div class="val blue" id="batt-level">--</div></div>
+<div class="item"><label>温度</label><div class="val" id="batt-temp">--</div></div>
+<div class="item"><label>状态</label><div class="val" id="batt-status">--</div></div>
+<div class="item"><label>健康</label><div class="val green" id="batt-health">--</div></div>
+</div>
+<div class="battery-bar"><div class="battery-fill" id="batt-bar" style="width:0%;background:#4fc3f7"></div></div>
+</div>
+
+<div class="card">
+<h2>充电信息</h2>
+<div class="grid">
+<div class="item"><label>充电类型</label><div class="val" id="chg-type">--</div></div>
+<div class="item"><label>当前电流</label><div class="val" id="chg-current">--</div></div>
+<div class="item"><label>电压上限</label><div class="val" id="chg-volt-max">--</div></div>
+<div class="item"><label>电流上限</label><div class="val" id="chg-curr-max">--</div></div>
+</div>
+</div>
+
+<div class="card">
+<h2>功能开关</h2>
+<div class="toggle"><span class="label">强制满速充电</span><label class="switch"><input type="checkbox" id="t-force"><span class="slider"></span></label></div>
+<div class="toggle"><span class="label">充电器插拔伪装</span><label class="switch"><input type="checkbox" id="t-fake"><span class="slider"></span></label></div>
+<div class="toggle"><span class="label">Web 管理</span><label class="switch"><input type="checkbox" id="t-web" checked disabled><span class="slider"></span></label></div>
+</div>
+
+<div class="card">
+<h2>参数设置</h2>
+<div class="item"><label>电压上限 (mV)</label>
+<select id="s-volt"><option value="0">默认</option><option value="4350">4.35V</option><option value="4400">4.40V</option><option value="4450">4.45V</option></select></div>
+<div class="item" style="margin-top:10px"><label>电流上限 (mA)</label>
+<select id="s-curr"><option value="0">默认</option><option value="2000">2000mA</option><option value="3000">3000mA</option><option value="4000">4000mA</option><option value="6000">6000mA</option></select></div>
+<div class="item" style="margin-top:10px"><label>输入电流 (mA)</label>
+<select id="s-input"><option value="0">默认</option><option value="1000">1000mA</option><option value="2000">2000mA</option><option value="3000">3000mA</option></select></div>
+<button class="btn" id="btn-apply">应用更改</button>
+</div>
+
+<div class="card">
+<h2>运行日志</h2>
+<div id="logs">加载中...</div>
+</div>
+
+<button class="btn danger" id="btn-restart">重启充电服务</button>
+
+<script>
+var API='/cgi-bin/api.sh';
+function $(id){return document.getElementById(id)}
+function fetchJSON(url,cb,err){
+  err=err||function(){};
+  var x=new XMLHttpRequest();
+  x.open('GET',url,true);
+  x.onreadystatechange=function(){
+    if(x.readyState!=4)return;
+    if(x.status==200){try{cb(JSON.parse(x.responseText))}catch(e){err(e)}}
+    else err(x.status);
+  };
+  x.send();
+}
+function setConn(ok){
+  $('conn-dot').className='status-dot '+(ok?'dot-on':'dot-off');
+  $('conn-text').textContent=ok?'已连接':'连接失败';
+}
+function tempColor(t){
+  if(!t)return'';
+  if(t>=45)return'red';if(t>=40)return'yellow';return'green';
+}
+function statusColor(s){
+  if(s=='Charging'||s=='Full')return'green';if(s=='Discharging')return'yellow';return'';
+}
+function updateStatus(){
+  fetchJSON(API+'?action=status',function(d){
+    setConn(true);
+    var lv=d.battery.level||0;
+    $('batt-level').textContent=lv+'%';
+    $('batt-bar').style.width=lv+'%';
+    $('batt-bar').style.background=lv>=80?'#4ecca3':lv>=20?'#4fc3f7':'#e94560';
+    var tp=d.battery.temp||0;
+    $('batt-temp').textContent=tp+'\u00b0C';
+    $('batt-temp').className='val '+tempColor(tp);
+    var st=d.battery.status||'--';
+    $('batt-status').textContent=st;
+    $('batt-status').className='val '+statusColor(st);
+    $('batt-health').textContent=d.battery.health||'--';
+    $('chg-type').textContent=d.charger.type||'未连接';
+    $('chg-current').textContent=d.charger.current||'--';
+    $('chg-volt-max').textContent=d.params.voltage_max||'--';
+    $('chg-curr-max').textContent=d.params.current_max||'--';
+  },function(){setConn(false)});
+}
+function loadConfig(){
+  fetchJSON(API+'?action=config',function(d){
+    $('t-force').checked=d.force_max_speed==1;
+    $('t-fake').checked=d.enable_fake_cycle==1;
+    $('s-volt').value=d.voltage_limit||0;
+    $('s-curr').value=d.current_limit||0;
+    $('s-input').value=d.input_current_limit||0;
+  });
+}
+function loadLogs(){
+  fetchJSON(API+'?action=logs',function(d){
+    var lines=d.logs||[];
+    var html=lines.map(function(l){
+      var cls='';
+      if(/警告|失败|错误/.test(l))cls='log-warn';
+      else if(/完成|启用|成功/.test(l))cls='log-ok';
+      else if(/错误/.test(l))cls='log-err';
+      return '<div class="log-line '+cls+'">'+l.replace(/</g,'&lt;')+'</div>';
+    }).join('');
+    $('logs').innerHTML=html||'无日志';
+    $('logs').scrollTop=$('logs').scrollHeight;
+  });
+}
+function applyConfig(){
+  var p=[];
+  p.push('force_max_speed='+($('t-force').checked?1:0));
+  p.push('enable_fake_cycle='+($('t-fake').checked?1:0));
+  p.push('voltage_limit='+$('s-volt').value);
+  p.push('current_limit='+$('s-curr').value);
+  p.push('input_current_limit='+$('s-input').value);
+  var x=new XMLHttpRequest();
+  x.open('GET',API+'?action=update&'+p.join('&'),true);
+  x.onreadystatechange=function(){
+    if(x.readyState==4&&x.status==200){
+      $('btn-apply').textContent='已应用';
+      setTimeout(function(){$('btn-apply').textContent='应用更改'},2000);
+      loadLogs();
+    }
+  };
+  x.send();
+}
+function restartService(){
+  var x=new XMLHttpRequest();
+  x.open('GET',API+'?action=restart',true);
+  x.onreadystatechange=function(){
+    if(x.readyState==4&&x.status==200){
+      $('btn-restart').textContent='已发送重启信号';
+      setTimeout(function(){$('btn-restart').textContent='重启充电服务'},3000);
+    }
+  };
+  x.send();
+}
+$('btn-apply').onclick=applyConfig;
+$('btn-restart').onclick=restartService;
+updateStatus();loadConfig();loadLogs();
+setInterval(updateStatus,3000);
+setInterval(loadLogs,5000);
+</script>
+</body>
+</html>
