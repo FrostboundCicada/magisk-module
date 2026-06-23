@@ -1,0 +1,6 @@
+id=oneplus_charging_fix
+name=OnePlus Charging Fix
+version=v1.0.0
+versionCode=1
+author=FrostboundCicada
+description=解决一加设备充电问题的 Magisk 模块，主要支持 ColorOS 16，向下兼容旧版本。
